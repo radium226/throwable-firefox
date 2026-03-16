@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+from throwablefirefox.openvpn import OpenVPN
+from throwablefirefox.networknamespace import NetworkNamespace
+from throwablefirefox.tools import subdl, Peerflix, VLC
+from throwablefirefox.waitfor import wait_for
+from throwablefirefox.ipchecker import IPChecker
+from colorama import Fore, Back, Style
+import sys
+
+
+def info(message):
+    print(f"{Fore.RED}{message}{Style.RESET_ALL}")
+
+SUITABLE_SIZE = 10000000
+
+if __name__ == "__main__":
+    magnet = sys.argv[1]
+
+    with NetworkNamespace(name="peerflix") as network_namespace:
+        with OpenVPN(network_namespace=network_namespace, country="Japan"):
+            ip_checker = IPChecker.for_torrent(network_namespace=network_namespace)
+            ip = ip_checker.ip
+            country = ip_checker.country
+            print(f"{Fore.GREEN}Checking IP (ip={ip}, country={country})...{Style.RESET_ALL}")
+
+            with Peerflix(magnet=magnet, network_namespace=network_namespace) as peerflix:
+                url = peerflix.url
+
+                info(f"Waiting for video file to reach suitable size")
+                wait_for(lambda: peerflix.video_file_path.stat().st_size  >= SUITABLE_SIZE, timeout=60)
+
+                try:
+                    info("Downloading subtitles...")
+                    subtitles_file_path = subdl(peerflix.video_file_path)
+                except:
+                    subtitles_file_path = None
+
+                info("Playing video... ")
+                vlc = VLC(url=url, subtitles_file_path=subtitles_file_path, network_namespace=network_namespace)
+                vlc.start()
+                vlc.wait()

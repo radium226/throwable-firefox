@@ -1,0 +1,25 @@
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[project]
+name = "radium226-throwable-firefox"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "selenium",
+    "mitmproxy",
+    "pydantic>=2",
+    "loguru",
+    "pyasn1",
+    "pyasn1-modules",
+    "aiosqlite",
+    "click",
+]
+
+[project.scripts]
+throwable-firefox = "radium226.throwable_firefox.cli.__main__:main"
+
+[tool.uv.build-backend]
+module-name = "radium226.throwable_firefox"
+source-dir = "src"
