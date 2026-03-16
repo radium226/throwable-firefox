@@ -4,7 +4,6 @@ import tempfile
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from textwrap import dedent
 from typing import Self
 
 import aiosqlite
@@ -17,7 +16,6 @@ from .proxy import Proxy
 
 
 class Profile:
-
     path: Path
 
     def __init__(self, path: Path) -> None:
@@ -63,16 +61,21 @@ class Profile:
         logger.debug("Creating Firefox profile at {path}", path=profile_path)
 
         # 1. Let Firefox create the profile skeleton
-        await run_and_wait([
-            "firefox",
-            "-no-remote",
-            "-CreateProfile", f"Throwable {profile_path}",
-        ])
+        await run_and_wait(
+            [
+                "firefox",
+                "-no-remote",
+                "-CreateProfile",
+                f"Throwable {profile_path}",
+            ]
+        )
 
         # 2. Write user.js
         user_js_lines: list[str] = [
             'user_pref("extensions.autoDisableScopes", 0);',
             'user_pref("browser.startup.page", 0);',
+            'user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);',
+            'user_pref("datareporting.policy.firstRunURL", "");',
         ]
         if marionette_port is not None:
             user_js_lines.append(f'user_pref("marionette.port", {marionette_port});')
@@ -104,14 +107,20 @@ class Profile:
 
         # 5. Install MITM CA certificate via certutil
         if proxy is not None:
-            await run_and_wait([
-                "certutil",
-                "-A",
-                "-n", "Throwable Firefox MITM CA",
-                "-t", "CT,C,C",
-                "-i", str(proxy.ca_cert_path),
-                "-d", f"sql:{profile_path}",
-            ])
+            await run_and_wait(
+                [
+                    "certutil",
+                    "-A",
+                    "-n",
+                    "Throwable Firefox MITM CA",
+                    "-t",
+                    "CT,C,C",
+                    "-i",
+                    str(proxy.ca_cert_path),
+                    "-d",
+                    f"sql:{profile_path}",
+                ]
+            )
 
         # 6. Insert bookmarks via aiosqlite
         if bookmarks:
@@ -119,13 +128,17 @@ class Profile:
             async with aiosqlite.connect(str(places_path)) as db:
                 for bookmark in bookmarks:
                     row = await db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM moz_places")
-                    (place_id,) = await row.fetchone()
+                    place_row = await row.fetchone()
+                    assert place_row is not None
+                    (place_id,) = place_row
                     await db.execute(
                         "INSERT INTO moz_places(id, url, title) VALUES (?, ?, ?)",
                         (place_id, bookmark.url, bookmark.title),
                     )
                     row = await db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM moz_bookmarks")
-                    (bookmark_id,) = await row.fetchone()
+                    bookmark_row = await row.fetchone()
+                    assert bookmark_row is not None
+                    (bookmark_id,) = bookmark_row
                     await db.execute(
                         "INSERT INTO moz_bookmarks(id, type, fk, parent, title) VALUES (?, ?, ?, ?, ?)",
                         (bookmark_id, 1, place_id, 3, bookmark.title),
@@ -139,7 +152,8 @@ class Profile:
                 "firefox",
                 "-no-remote",
                 "--headless",
-                "--profile", str(profile_path),
+                "--profile",
+                str(profile_path),
                 start_new_session=True,
             )
             await asyncio.sleep(5)

@@ -13,18 +13,17 @@ from loguru import logger
 from ._shell import run_and_wait
 from .http import HTTPFlow
 
-
 type HTTPFlowMatcher = Callable[[HTTPFlow], bool]
 
 
 def having_url_that_starts_with(prefix: str) -> HTTPFlowMatcher:
     def matcher(flow: HTTPFlow) -> bool:
         return flow.request.url.startswith(prefix)
+
     return matcher
 
 
 class Proxy:
-
     ca_cert_path: Path
     host: str
     port: int
@@ -52,20 +51,35 @@ class Proxy:
         cert_path = folder / "mitmproxy-ca-cert.pem"
         combined_path = folder / "mitmproxy-ca.pem"
 
-        await run_and_wait([
-            "openssl", "genrsa",
-            "-out", str(key_path),
-            "2048",
-        ])
-        await run_and_wait([
-            "openssl", "req", "-x509", "-new", "-nodes",
-            "-key", str(key_path),
-            "-sha256",
-            "-out", str(cert_path),
-            "-addext", "keyUsage=critical,keyCertSign",
-            "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0",
-            "-subj", "/CN=Throwable Firefox MITM CA",
-        ])
+        await run_and_wait(
+            [
+                "openssl",
+                "genrsa",
+                "-out",
+                str(key_path),
+                "2048",
+            ]
+        )
+        await run_and_wait(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-new",
+                "-nodes",
+                "-key",
+                str(key_path),
+                "-sha256",
+                "-out",
+                str(cert_path),
+                "-addext",
+                "keyUsage=critical,keyCertSign",
+                "-addext",
+                "basicConstraints=critical,CA:TRUE,pathlen:0",
+                "-subj",
+                "/CN=Throwable Firefox MITM CA",
+            ]
+        )
         combined_path.write_text(cert_path.read_text() + key_path.read_text())
         return cert_path
 
@@ -84,11 +98,16 @@ class Proxy:
 
             command = [
                 "mitmdump",
-                "--listen-host", host,
-                "--listen-port", str(port),
-                "--set", f"fd={http_flow_write_fd}",
-                "--set", f"confdir={tmp_path}",
-                "--script", str(addon_path),
+                "--listen-host",
+                host,
+                "--listen-port",
+                str(port),
+                "--set",
+                f"fd={http_flow_write_fd}",
+                "--set",
+                f"confdir={tmp_path}",
+                "--script",
+                str(addon_path),
             ]
             logger.debug("Starting mitmdump: {command}", command=command)
             process = await asyncio.create_subprocess_exec(

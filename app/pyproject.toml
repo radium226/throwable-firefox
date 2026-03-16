@@ -23,3 +23,22 @@ throwable-firefox = "radium226.throwable_firefox.cli.__main__:main"
 [tool.uv.build-backend]
 module-name = "radium226.throwable_firefox"
 source-dir = "src"
+
+[dependency-groups]
+dev = [
+    "ty",
+    "ruff",
+]
+
+[tool.ruff]
+src = ["src"]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ty]
+environment = { python-version = "3.12" }
+
+[tool.ty.src]
+exclude = ["**/mitm_addon.py"]

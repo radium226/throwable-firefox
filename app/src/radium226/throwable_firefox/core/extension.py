@@ -1,15 +1,14 @@
 import json
 from pathlib import Path
+from tempfile import mkdtemp
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
-from tempfile import mkdtemp
 from zipfile import ZipFile
 
 from loguru import logger
 
 
 class Extension:
-
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
 
@@ -47,7 +46,7 @@ class Extension:
     @staticmethod
     def _id_from_rsa(mozilla_rsa: bytes) -> str:
         from pyasn1.codec.der import decoder as der_decoder
-        from pyasn1_modules import rfc5652, rfc5280
+        from pyasn1_modules import rfc5280, rfc5652
 
         content_info, _ = der_decoder.decode(mozilla_rsa, asn1Spec=rfc5652.ContentInfo())
         content_bytes = bytes(content_info.getComponentByName("content"))

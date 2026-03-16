@@ -9,7 +9,6 @@ from mitmproxy import ctx, exceptions
 
 
 class WriteHTTPFlowToFD:
-
     def load(self, loader):
         loader.add_option(
             name="fd",
