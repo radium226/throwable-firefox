@@ -1,14 +1,16 @@
 from .bookmark import Bookmark
-from .browser import Browser
+from .firefox import Firefox
 from .extension import Extension
+from .host_and_port import HostAndPort
 from .http import HTTPFlow, HTTPRequest, HTTPResponse
 from .profile import Profile
 from .proxy import HTTPFlowMatcher, Proxy, having_url_that_starts_with
 
 __all__ = [
     "Bookmark",
-    "Browser",
+    "Firefox",
     "Extension",
+    "HostAndPort",
     "HTTPFlow",
     "HTTPFlowMatcher",
     "HTTPRequest",

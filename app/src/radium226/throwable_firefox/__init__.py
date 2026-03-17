@@ -1,6 +1,6 @@
 from .core import (
     Bookmark,
-    Browser,
+    Firefox,
     Extension,
     HTTPFlow,
     HTTPFlowMatcher,
@@ -13,7 +13,7 @@ from .core import (
 
 __all__ = [
     "Bookmark",
-    "Browser",
+    "Firefox",
     "Extension",
     "HTTPFlow",
     "HTTPFlowMatcher",

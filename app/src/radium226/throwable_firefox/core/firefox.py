@@ -3,21 +3,23 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from collections.abc import AsyncIterator
+from typing import AsyncIterator
+from asyncio.subprocess import Process, create_subprocess_exec
 from contextlib import asynccontextmanager
 from typing import Self
 
 from loguru import logger
+from radium226.throwable_firefox.core.host_and_port import HostAndPort
 
 from .profile import Profile
 
 
-class Browser:
-    process: asyncio.subprocess.Process
+class Firefox:
+    process: Process
 
     def __init__(
         self,
-        process: asyncio.subprocess.Process,
+        process: Process,
     ) -> None:
         self.process = process
 
@@ -29,26 +31,25 @@ class Browser:
         headless: bool = False,
         private: bool = True,
         url: str | None = None,
-        remote_control: bool = False,
+        with_marionette: bool = False,
     ) -> AsyncIterator[Self]:
         headless_args = ["--headless"] if headless else []
         private_args = ["--private-window"] if private else []
-        remote_control_args = ["--marionette"] if remote_control else []
+        with_marionette_args = ["--marionette"] if with_marionette else []
         url_args = [url] if url else []
+        profile_args = ["--profile", str(profile.path)]
         command = [
             "firefox",
-            "-no-remote",
             "--new-instance",
-            "--profile",
-            str(profile.path),
+            *profile_args,
             *headless_args,
             *private_args,
-            *remote_control_args,
+            *with_marionette_args,
             *url_args,
         ]
         logger.debug("Launching Firefox: {command}", command=command)
 
-        process = await asyncio.create_subprocess_exec(
+        process = await create_subprocess_exec(
             *command,
             start_new_session=True,
         )
