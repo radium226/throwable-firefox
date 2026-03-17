@@ -1,6 +1,6 @@
 from .bookmark import Bookmark
-from .firefox import Firefox
 from .extension import Extension
+from .firefox import Firefox
 from .host_and_port import HostAndPort
 from .http import HTTPFlow, HTTPRequest, HTTPResponse
 from .profile import Profile

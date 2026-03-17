@@ -26,10 +26,10 @@ class Profile:
     @asynccontextmanager
     async def create(
         cls,
+        marionette_address: HostAndPort,
         proxy: Proxy | None = None,
         extensions: list[Extension] | None = None,
         bookmarks: list[Bookmark] | None = None,
-        marionette_address: HostAndPort | None = None,
     ) -> AsyncIterator[Self]:
         extensions = extensions or []
         bookmarks = bookmarks or []
@@ -131,7 +131,9 @@ class Profile:
     async def _setup_marionette(cls, profile_folder_path: Path, marionette_address: HostAndPort | None) -> None:
         if marionette_address is None:
             return
-        logger.debug("Setting up marionette at {host}:{port}...", host=marionette_address.host, port=marionette_address.port)
+        logger.debug(
+            "Setting up marionette at {host}:{port}...", host=marionette_address.host, port=marionette_address.port
+        )
         await cls._append_user_js(profile_folder_path, [
             f'user_pref("marionette.host", "{marionette_address.host}");',
             f'user_pref("marionette.port", {marionette_address.port});',
@@ -223,7 +225,9 @@ class Profile:
             await db.commit()
 
     @classmethod
-    async def _prestart_firefox(cls, profile_folder_path: Path, extensions: list[Extension], bookmarks: list[Bookmark]) -> None:
+    async def _prestart_firefox(
+        cls, profile_folder_path: Path, extensions: list[Extension], bookmarks: list[Bookmark]
+    ) -> None:
         if not extensions and not bookmarks:
             return
         logger.debug("Pre-starting Firefox to initialize profile...")

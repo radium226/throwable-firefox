@@ -3,25 +3,61 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from typing import AsyncIterator
 from asyncio.subprocess import Process, create_subprocess_exec
 from contextlib import asynccontextmanager
-from typing import Self
+from dataclasses import dataclass
+from typing import AsyncIterator, Awaitable, Callable, Self
 
 from loguru import logger
-from radium226.throwable_firefox.core.host_and_port import HostAndPort
 
 from .profile import Profile
 
+type Command = list[str]
 
+type ExitCode = int
+
+type KillProcess = Callable[[], Awaitable[None]]
+
+type WaitForProcess = Callable[[], Awaitable[ExitCode]]
+
+
+@dataclass
+class CreateProcessResult:
+    kill_process: KillProcess
+    wait_for_process: WaitForProcess
+
+
+type CreateProcess = Callable[[Command], Awaitable[CreateProcessResult]]
+
+
+async def create_process_locally(command: Command) -> CreateProcessResult:
+    logger.debug("Creating process locally: {command}", command=command)
+    process: Process = await create_subprocess_exec(
+        *command,
+        start_new_session=True,
+    )
+
+    async def kill_process() -> None:
+        logger.debug("Killing process locally with PID {pid}", pid=process.pid)
+        try:
+            pgid = os.getpgid(process.pid)
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        await asyncio.shield(process.wait())
+
+    async def wait_for_process() -> ExitCode:
+        logger.debug("Waiting for process with PID {pid} to exit", pid=process.pid)
+        return await process.wait()
+
+    return CreateProcessResult(kill_process=kill_process, wait_for_process=wait_for_process)
+
+
+@dataclass
 class Firefox:
-    process: Process
-
-    def __init__(
-        self,
-        process: Process,
-    ) -> None:
-        self.process = process
+    
+    terminate: Callable[[], Awaitable[None]]
+    wait: Callable[[], Awaitable[ExitCode]]
 
     @classmethod
     @asynccontextmanager
@@ -32,7 +68,10 @@ class Firefox:
         private: bool = True,
         url: str | None = None,
         with_marionette: bool = False,
+        create_process: CreateProcess | None = None,
     ) -> AsyncIterator[Self]:
+        create_process = create_process or create_process_locally
+        
         headless_args = ["--headless"] if headless else []
         private_args = ["--private-window"] if private else []
         with_marionette_args = ["--marionette"] if with_marionette else []
@@ -49,59 +88,75 @@ class Firefox:
         ]
         logger.debug("Launching Firefox: {command}", command=command)
 
-        process = await create_subprocess_exec(
-            *command,
-            start_new_session=True,
-        )
+        result = await create_process(command)
 
-        self = cls(process=process)
+        self = cls(terminate=result.kill_process, wait=result.wait_for_process)
         try:
             yield self
         finally:
             await self.terminate()
 
-    async def terminate(self) -> None:
-        try:
-            logger.debug("Terminating Firefox process group")
-            pgid = os.getpgid(self.process.pid)
-            os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        await asyncio.shield(self.process.wait())
 
-    async def wait(self) -> None:
-        await self.process.wait()
+# @asynccontextmanager
+# async def _launch_locally(cls: type[Firefox], command: list[str]) -> AsyncIterator[Firefox]:
+#     process: Process = await create_subprocess_exec(
+#         *command,
+#         start_new_session=True,
+#     )
+
+#     async def terminate() -> None:
+#         try:
+#             pgid = os.getpgid(process.pid)
+#             os.killpg(pgid, signal.SIGTERM)
+#         except ProcessLookupError:
+#             pass
+#         await asyncio.shield(process.wait())
+
+#     async def wait() -> None:
+#         await process.wait()
+
+#     self = cls(_terminate=terminate, _wait=wait)
+#     try:
+#         yield self
+#     finally:
+#         await self.terminate()
 
 
-# async def _connect_selenium(profile: Profile) -> object:
-#     from selenium.webdriver import Firefox, FirefoxOptions
-#     from selenium.webdriver.firefox.service import Service
+# @asynccontextmanager
+# async def _launch_via_vpn_passthrough(
+#     cls: type[Firefox], command: list[str], socket_file_path: Path
+# ) -> AsyncIterator[Firefox]:
+#     from radium226.vpn_passthrough.client import Client
 
-#     # Wait a moment for Firefox to start its Marionette socket
-#     await asyncio.sleep(3)
+#     async with Client.connect(socket_file_path) as vpn_client:
+#         vpn_pid: int | None = None
+#         pid_received = asyncio.Event()
 
-#     loop = asyncio.get_event_loop()
+#         async def on_pid_received(pid: int) -> None:
+#             nonlocal vpn_pid
+#             vpn_pid = pid
+#             pid_received.set()
 
-#     def _connect() -> Firefox:
-#         marionette_port = _read_marionette_port(profile)
-#         service = Service(
-#             service_args=[
-#                 "--marionette-port", str(marionette_port),
-#                 "--connect-existing",
-#             ],
+#         run_task: asyncio.Task[int] = asyncio.create_task(
+#             vpn_client.run_process(
+#                 command[0],
+#                 args=command[1:],
+#                 on_pid_received=on_pid_received,
+#             )
 #         )
-#         options = FirefoxOptions()
-#         return Firefox(service=service, options=options)
 
-#     return await loop.run_in_executor(None, _connect)
+#         await pid_received.wait()
 
+#         async def terminate() -> None:
+#             if vpn_pid is not None:
+#                 await vpn_client.kill_process(vpn_pid, signal.SIGTERM)
+#             await asyncio.shield(run_task)
 
-# def _read_marionette_port(profile: Profile) -> int:
-#     user_js = profile.path / "user.js"
-#     if user_js.exists():
-#         for line in user_js.read_text().splitlines():
-#             if "marionette.port" in line:
-#                 # user_pref("marionette.port", 2828);
-#                 port_str = line.split(",")[-1].strip().rstrip(");")
-#                 return int(port_str)
-#     return 2828  # Firefox default
+#         async def wait() -> None:
+#             await run_task
+
+#         self = cls(_terminate=terminate, _wait=wait)
+#         try:
+#             yield self
+#         finally:
+#             await self.terminate()

@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "radium226-throwable-firefox"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "selenium",
     "mitmproxy",
@@ -15,6 +15,7 @@ dependencies = [
     "pyasn1-modules",
     "aiosqlite",
     "click",
+    "radium226-vpn-passthrough-client",
 ]
 
 [project.scripts]
@@ -23,6 +24,9 @@ throwable-firefox = "radium226.throwable_firefox.cli.__main__:main"
 [tool.uv.build-backend]
 module-name = "radium226.throwable_firefox"
 source-dir = "src"
+
+[tool.uv.sources]
+radium226-vpn-passthrough-client = { path = "../../vpn-passthrough/app/packages/client", editable = true }
 
 [dependency-groups]
 dev = [
@@ -38,7 +42,7 @@ line-length = 120
 select = ["E", "F", "I"]
 
 [tool.ty]
-environment = { python-version = "3.12" }
+environment = { python-version = "3.14" }
 
 [tool.ty.src]
 exclude = ["**/mitm_addon.py"]

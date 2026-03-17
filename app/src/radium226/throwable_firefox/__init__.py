@@ -1,7 +1,7 @@
 from .core import (
     Bookmark,
-    Firefox,
     Extension,
+    Firefox,
     HTTPFlow,
     HTTPFlowMatcher,
     HTTPRequest,
