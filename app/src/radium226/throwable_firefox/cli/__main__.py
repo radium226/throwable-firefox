@@ -5,33 +5,16 @@ from pathlib import Path
 
 import click
 from loguru import logger
-from radium226.vpn_passthrough.client import Client
-
-from radium226.throwable_firefox.core import CreateProcess, CreateProcessResult, Firefox, Command
+from radium226.vpn_passthrough.client import Client, ClientConfig
 
 from radium226.throwable_firefox.core import (
     Bookmark,
+    CreateProcess,
     Extension,
     Firefox,
-    HostAndPort,
     Profile,
+    create_process_through_vpn,
 )
-
-
-class HostAndPortParamType(click.ParamType):
-    name = "host:port"
-
-    def convert(self, value: str, param: click.Parameter | None, ctx: click.Context | None) -> HostAndPort:
-        try:
-            return HostAndPort.parse(value)
-        except ValueError:
-            self.fail(f"'{value}' is not a valid host:port", param, ctx)
-
-
-HOST_AND_PORT = HostAndPortParamType()
-
-
-DEFAULT_VPN_PASSTHROUGH_SOCKET = Path("/run/vpn-passthrough/ipc.socket")
 
 
 @click.command()
@@ -40,21 +23,20 @@ DEFAULT_VPN_PASSTHROUGH_SOCKET = Path("/run/vpn-passthrough/ipc.socket")
 @click.option("--extension", "extension_locations", multiple=True, type=str, help="Path or URL of a .xpi extension")
 @click.option("--bookmark", "bookmarks", multiple=True, type=(str, str), metavar="TITLE URL", help="Bookmark to add")
 @click.option("--private/--no-private", is_flag=True, help="Enable or disable private browsing mode")
-@click.option("--marionette-address", default=None, type=HOST_AND_PORT, help="Marionette address (host:port)")
-@click.option("--with-vpn-passthrough", is_flag=True, default=False, help="Run Firefox via the vpn-passthrough daemon")
+@click.option("--marionette/--no-marionette", is_flag=True, default=False, help="Enable Marionette")
+@click.option("--marionette-port", default=2828, type=int, help="Marionette port")
+@click.option("--behind-vpn", is_flag=True, default=False, help="Run Firefox via the vpn-passthrough daemon")
 def main(
     url: str | None,
     headless: bool,
     extension_locations: tuple[str, ...],
     bookmarks: tuple[tuple[str, str], ...],
     private: bool,
-    marionette_address: HostAndPort | None,
-    with_vpn_passthrough: bool,
+    marionette: bool,
+    marionette_port: int,
+    behind_vpn: bool,
 ) -> None:
     async def coro() -> None:
-        nonlocal marionette_address
-        marionette_address = marionette_address or HostAndPort.none()
-
         loop = asyncio.get_running_loop()
         task = asyncio.current_task()
         assert task is not None
@@ -80,47 +62,38 @@ def main(
                 ]
 
                 create_process: CreateProcess | None = None
-                if with_vpn_passthrough:
-                    vpn_passthrough_client = await exit_stack.enter_async_context(
-                        Client.connect(Path("/run/vpn-passthrough/ipc.socket"))
+                if behind_vpn:
+                    vpn_passthrough_client = await exit_stack.enter_async_context(Client.connect(ClientConfig.load()))
+
+                    regions = await vpn_passthrough_client.list_regions()
+                    region_id = regions[0].region_id
+                    logger.debug("Selected VPN region: {region_id}", region_id=region_id)
+                    ports = [marionette_port] if marionette else []
+                    tunnel_created = await vpn_passthrough_client.create_tunnel(
+                        "throwable-firefox",
+                        ports_to_forward_from_vpeer_to_loopback=ports,
                     )
 
-                    tunnel_created = await vpn_passthrough_client.create_tunnel(name="my_tunnel")
-                    vpeer_ip = tunnel_created.vpeer_ip
-                    marionette_address = marionette_address.merge_with(HostAndPort(host=vpeer_ip, port=None))
-
-                    async def create_process(command: Command) -> CreateProcessResult:
-                        logger.debug("Creating process via vpn-passthrough with command: {command}", command=command)
-                        process_id = await vpn_passthrough_client.run_process(command)
-                        logger.debug("Process created with PID {pid}", pid=process_id)
-
-                        async def kill_process() -> None:
-                            logger.debug("Killing process via vpn-passthrough with PID {pid}", pid=process_id)
-                            await vpn_passthrough_client.kill_process(process_id)
-
-                        async def wait_for_process() -> int:
-                            exit_code = await vpn_passthrough_client.wait_for_process(process_id)
-                            logger.debug("Process with PID {pid} exited with code {code}", pid=process_id, code=exit_code)
-                            return exit_code
-
-                        return CreateProcessResult(kill_process=kill_process, wait_for_process=wait_for_process)
+                    create_process = create_process_through_vpn(vpn_passthrough_client, tunnel_created.name)
 
                 profile = await exit_stack.enter_async_context(
                     Profile.create(
                         proxy=None,
                         extensions=extensions,
                         bookmarks=[Bookmark(title=t, url=u) for t, u in bookmarks],
-                        marionette_address=marionette_address,
+                        marionette_port=marionette_port if marionette else None,
                     )
                 )
 
+                logger.info("Marionette port: {marionette_port}", marionette_port=marionette_port)
                 browser = await exit_stack.enter_async_context(
                     Firefox.launch(
                         profile,
                         headless=headless,
                         private=private,
                         url=url,
-                        with_marionette=marionette_address is not None,
+                        with_marionette=marionette,
+                        create_process=create_process,
                     )
                 )
 

@@ -1,4 +1,3 @@
-# type: ignore
 # Standalone mitmproxy addon — no imports from this package.
 # Runs inside mitmdump's process.
 

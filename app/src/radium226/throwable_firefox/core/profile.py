@@ -12,7 +12,6 @@ from loguru import logger
 from ._shell import run_and_wait
 from .bookmark import Bookmark
 from .extension import Extension
-from .host_and_port import HostAndPort
 from .proxy import Proxy
 
 
@@ -26,7 +25,7 @@ class Profile:
     @asynccontextmanager
     async def create(
         cls,
-        marionette_address: HostAndPort,
+        marionette_port: int | None = None,
         proxy: Proxy | None = None,
         extensions: list[Extension] | None = None,
         bookmarks: list[Bookmark] | None = None,
@@ -44,7 +43,7 @@ class Profile:
                 proxy=proxy,
                 extensions=extensions,
                 bookmarks=bookmarks,
-                marionette_address=marionette_address,
+                marionette_port=marionette_port,
             )
             yield cls(path=profile_folder_path)
         finally:
@@ -57,11 +56,11 @@ class Profile:
         proxy: Proxy | None,
         extensions: list[Extension],
         bookmarks: list[Bookmark],
-        marionette_address: HostAndPort | None,
+        marionette_port: int | None,
     ) -> None:
         await cls._setup_privacy(profile_folder_path)
         await cls._setup_ai_and_telemetry(profile_folder_path)
-        await cls._setup_marionette(profile_folder_path, marionette_address)
+        await cls._setup_marionette(profile_folder_path, marionette_port)
         await cls._setup_proxy(profile_folder_path, proxy)
         cls._setup_bookmarks_toolbar(profile_folder_path)
         await cls._setup_extensions(profile_folder_path, extensions)
@@ -128,15 +127,12 @@ class Profile:
         await cls._append_user_js(profile_folder_path, lines)
 
     @classmethod
-    async def _setup_marionette(cls, profile_folder_path: Path, marionette_address: HostAndPort | None) -> None:
-        if marionette_address is None:
+    async def _setup_marionette(cls, profile_folder_path: Path, marionette_port: int | None) -> None:
+        if marionette_port is None:
             return
-        logger.debug(
-            "Setting up marionette at {host}:{port}...", host=marionette_address.host, port=marionette_address.port
-        )
+        logger.debug("Setting up marionette on port {port}...", port=marionette_port)
         await cls._append_user_js(profile_folder_path, [
-            f'user_pref("marionette.host", "{marionette_address.host}");',
-            f'user_pref("marionette.port", {marionette_address.port});',
+            f'user_pref("marionette.port", {marionette_port});',
         ])
 
     @classmethod

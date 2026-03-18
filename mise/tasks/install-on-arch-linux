@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -euEo pipefail
+
+main()
+{
+    local root
+    root="$(git rev-parse --show-toplevel)"
+
+    local -a pkgs
+    mapfile -t pkgs < <(find "${root}/packages/arch" -mindepth 1 -maxdepth 1 -type f -name "*.pkg.tar.zst" | sort)
+
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        log "No packages found in ${root}/packages/arch — run package-for-arch-linux first."
+        exit 1
+    fi
+
+    log "Installing dependencies..."
+    yay -S --noconfirm --needed \
+        mitmproxy \
+        python-aiosqlite
+
+    log "Installing Arch Linux package..."
+    yay -U --noconfirm "${pkgs[@]}"
+}
+
+log() {
+    echo "[$(date --iso-8601=seconds)] ${*}" >&2
+}
+
+main "${@}"

@@ -7,12 +7,9 @@ name = "radium226-throwable-firefox"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
-    "selenium",
     "mitmproxy",
     "pydantic>=2",
     "loguru",
-    "pyasn1",
-    "pyasn1-modules",
     "aiosqlite",
     "click",
     "radium226-vpn-passthrough-client",
@@ -26,7 +23,7 @@ module-name = "radium226.throwable_firefox"
 source-dir = "src"
 
 [tool.uv.sources]
-radium226-vpn-passthrough-client = { path = "../../vpn-passthrough/app/packages/client", editable = true }
+radium226-vpn-passthrough-client = { git = "https://git.sr.ht/~radium226/vpn-passthrough", subdirectory = "app/packages/client" }
 
 [dependency-groups]
 dev = [

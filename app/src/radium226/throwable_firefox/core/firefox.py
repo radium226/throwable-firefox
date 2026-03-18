@@ -1,56 +1,13 @@
 from __future__ import annotations
 
-import asyncio
-import os
-import signal
-from asyncio.subprocess import Process, create_subprocess_exec
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Awaitable, Callable, Self
 
 from loguru import logger
 
+from .process import CreateProcess, ExitCode, create_local_process
 from .profile import Profile
-
-type Command = list[str]
-
-type ExitCode = int
-
-type KillProcess = Callable[[], Awaitable[None]]
-
-type WaitForProcess = Callable[[], Awaitable[ExitCode]]
-
-
-@dataclass
-class CreateProcessResult:
-    kill_process: KillProcess
-    wait_for_process: WaitForProcess
-
-
-type CreateProcess = Callable[[Command], Awaitable[CreateProcessResult]]
-
-
-async def create_process_locally(command: Command) -> CreateProcessResult:
-    logger.debug("Creating process locally: {command}", command=command)
-    process: Process = await create_subprocess_exec(
-        *command,
-        start_new_session=True,
-    )
-
-    async def kill_process() -> None:
-        logger.debug("Killing process locally with PID {pid}", pid=process.pid)
-        try:
-            pgid = os.getpgid(process.pid)
-            os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        await asyncio.shield(process.wait())
-
-    async def wait_for_process() -> ExitCode:
-        logger.debug("Waiting for process with PID {pid} to exit", pid=process.pid)
-        return await process.wait()
-
-    return CreateProcessResult(kill_process=kill_process, wait_for_process=wait_for_process)
 
 
 @dataclass
@@ -70,7 +27,7 @@ class Firefox:
         with_marionette: bool = False,
         create_process: CreateProcess | None = None,
     ) -> AsyncIterator[Self]:
-        create_process = create_process or create_process_locally
+        create_process = create_process or create_local_process()
         
         headless_args = ["--headless"] if headless else []
         private_args = ["--private-window"] if private else []
@@ -88,6 +45,7 @@ class Firefox:
         ]
         logger.debug("Launching Firefox: {command}", command=command)
 
+        create_process = create_process or create_local_process()
         result = await create_process(command)
 
         self = cls(terminate=result.kill_process, wait=result.wait_for_process)
