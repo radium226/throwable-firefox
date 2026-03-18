@@ -25,7 +25,7 @@ from radium226.throwable_firefox.core import (
 @click.option("--private/--no-private", is_flag=True, help="Enable or disable private browsing mode")
 @click.option("--marionette/--no-marionette", is_flag=True, default=False, help="Enable Marionette")
 @click.option("--marionette-port", default=2828, type=int, help="Marionette port")
-@click.option("--behind-vpn", is_flag=True, default=False, help="Run Firefox via the vpn-passthrough daemon")
+@click.option("--with-vpn/--without-vpn", default=True, help="Run Firefox via the vpn-passthrough daemon")
 def main(
     url: str | None,
     headless: bool,
@@ -34,7 +34,7 @@ def main(
     private: bool,
     marionette: bool,
     marionette_port: int,
-    behind_vpn: bool,
+    with_vpn: bool,
 ) -> None:
     async def coro() -> None:
         loop = asyncio.get_running_loop()
@@ -62,7 +62,7 @@ def main(
                 ]
 
                 create_process: CreateProcess | None = None
-                if behind_vpn:
+                if with_vpn:
                     vpn_passthrough_client = await exit_stack.enter_async_context(Client.connect(ClientConfig.load()))
 
                     regions = await vpn_passthrough_client.list_regions()
@@ -73,6 +73,8 @@ def main(
                         "throwable-firefox",
                         ports_to_forward_from_vpeer_to_loopback=ports,
                     )
+
+                    exit_stack.push_async_callback(vpn_passthrough_client.destroy_tunnel, tunnel_created.name)
 
                     create_process = create_process_through_vpn(vpn_passthrough_client, tunnel_created.name)
 

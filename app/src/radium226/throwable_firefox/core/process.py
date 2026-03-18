@@ -96,6 +96,9 @@ def create_process_through_vpn(client: Client, tunnel_name: str) -> CreateProces
 
         async def kill_process() -> None:
             logger.debug("Killing process via VPN passthrough with PID {pid}", pid=pid)
+            if task.done():
+                logger.debug("Process {pid} already exited, skipping kill", pid=pid)
+                return
             await client.kill_process(pid, signal.SIGTERM)
 
         async def wait_for_process() -> ExitCode:
