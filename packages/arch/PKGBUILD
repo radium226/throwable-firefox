@@ -1,0 +1,47 @@
+# Maintainer: radium226 <radium226@rouages.xyz>
+pkgname=throwable-firefox
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Manages isolated, throwable Firefox instances"
+arch=('any')
+url="https://github.com/radium226/throwable-firefox"
+license=('MIT')
+depends=(
+    'firefox'
+    'nss'
+    'python'
+    'mitmproxy'
+    'python-pydantic'
+    'python-loguru'
+    'python-aiosqlite'
+    'python-click'
+    'vpn-passthrough-cli'
+)
+makedepends=('uv' 'python-installer' 'python-wheel' 'python-build' 'python-uv-build')
+source=(
+    "radium226_throwable_firefox-0.1.0.tar.gz"
+)
+sha256sums=(
+    "SKIP"
+)
+
+build() {
+    find "${srcdir}" -mindepth 1 -maxdepth 1 -type "d" -exec sh -c '
+        cd "${0}"
+        python -m build --wheel --no-isolation
+    ' "{}" "${srcdir}" \;
+}
+
+_install_wheels() {
+    local destdir="${1}"
+    shift
+    for pattern in "$@"; do
+        find "${srcdir}" -type f -name "${pattern}" \
+            -exec python -m installer --destdir="${destdir}" {} \;
+    done
+}
+
+package() {
+    _install_wheels "${pkgdir}" \
+        "radium226_throwable_firefox-*.whl"
+}
