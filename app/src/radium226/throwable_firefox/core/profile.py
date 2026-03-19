@@ -60,6 +60,7 @@ class Profile:
     ) -> None:
         await cls._setup_privacy(profile_folder_path)
         await cls._setup_ai_and_telemetry(profile_folder_path)
+        await cls._setup_search_engine(profile_folder_path)
         await cls._setup_marionette(profile_folder_path, marionette_port)
         await cls._setup_proxy(profile_folder_path, proxy)
         cls._setup_bookmarks_toolbar(profile_folder_path)
@@ -125,6 +126,15 @@ class Profile:
             'user_pref("network.connectivity-service.enabled", false);',
         ]
         await cls._append_user_js(profile_folder_path, lines)
+
+    @classmethod
+    async def _setup_search_engine(cls, profile_folder_path: Path) -> None:
+        logger.debug("Setting DuckDuckGo as default search engine...")
+        await cls._append_user_js(profile_folder_path, [
+            'user_pref("browser.search.defaultenginename", "DuckDuckGo");',
+            'user_pref("browser.search.selectedEngine", "DuckDuckGo");',
+            'user_pref("browser.urlbar.placeholderName", "DuckDuckGo");',
+        ])
 
     @classmethod
     async def _setup_marionette(cls, profile_folder_path: Path, marionette_port: int | None) -> None:
@@ -243,6 +253,12 @@ class Profile:
         await cls._wait_for_files(wait_for_files)
         pre_process.terminate()
         await pre_process.wait()
+        # Firefox creates search.json.mozlz4 during prestart, which takes precedence over
+        # browser.search.defaultenginename. Deleting it forces Firefox to rebuild from prefs
+        # on the real launch.
+        search_json = profile_folder_path / "search.json.mozlz4"
+        if search_json.exists():
+            search_json.unlink()
         logger.debug("Extension pre-start complete")
 
     @classmethod
