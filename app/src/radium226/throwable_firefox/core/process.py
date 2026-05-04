@@ -54,6 +54,9 @@ def create_local_process() -> CreateProcess:
         )
 
         async def kill_process() -> None:
+            if process.returncode is not None:
+                logger.debug("Process {pid} already exited, skipping kill", pid=process.pid)
+                return
             logger.debug("Killing process locally with PID {pid}", pid=process.pid)
             try:
                 pgid = os.getpgid(process.pid)
@@ -95,10 +98,10 @@ def create_process_through_vpn(client: Client, tunnel_name: str) -> CreateProces
         pid = await pid_future
 
         async def kill_process() -> None:
-            logger.debug("Killing process via VPN passthrough with PID {pid}", pid=pid)
-            if task.done():
+            if task.done() and not task.cancelled():
                 logger.debug("Process {pid} already exited, skipping kill", pid=pid)
                 return
+            logger.debug("Killing process via VPN passthrough with PID {pid}", pid=pid)
             await client.kill_process(pid, signal.SIGTERM)
 
         async def wait_for_process() -> ExitCode:

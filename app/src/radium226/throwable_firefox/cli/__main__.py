@@ -38,11 +38,10 @@ def main(
 ) -> None:
     async def coro() -> None:
         loop = asyncio.get_running_loop()
-        task = asyncio.current_task()
-        assert task is not None
+        shutdown_event = asyncio.Event()
 
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, task.cancel)
+            loop.add_signal_handler(sig, shutdown_event.set)
 
         try:
             async with AsyncExitStack() as exit_stack:
@@ -99,7 +98,20 @@ def main(
                     )
                 )
 
-                await browser.wait()
+                async def _wait() -> int:
+                    return await browser.wait()
+
+                wait_task = asyncio.create_task(_wait())
+                shutdown_task = asyncio.create_task(shutdown_event.wait())
+                try:
+                    await asyncio.wait(
+                        {wait_task, shutdown_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    for t in (wait_task, shutdown_task):
+                        if not t.done():
+                            t.cancel()
         except asyncio.CancelledError:
             pass
 
