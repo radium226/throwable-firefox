@@ -35,7 +35,7 @@ class Firefox:
         url_args = [url] if url else []
         profile_args = ["--profile", str(profile.path)]
         command = [
-            "firefox",
+            "librewolf",
             "--new-instance",
             *profile_args,
             *headless_args,

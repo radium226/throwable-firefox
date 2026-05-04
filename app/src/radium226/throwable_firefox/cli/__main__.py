@@ -16,16 +16,21 @@ from radium226.throwable_firefox.core import (
     create_process_through_vpn,
 )
 
+UBLOCK_ORIGIN_XPI_URL = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+ADNAUSEAM_XPI_URL = "https://addons.mozilla.org/firefox/downloads/file/4756689/adnauseam-3.28.4.xpi"
+
 
 @click.command()
 @click.option("--url", default=None, help="URL to open on launch")
 @click.option("--headless", is_flag=True, help="Run Firefox in headless mode")
 @click.option("--extension", "extension_locations", multiple=True, type=str, help="Path or URL of a .xpi extension")
 @click.option("--bookmark", "bookmarks", multiple=True, type=(str, str), metavar="TITLE URL", help="Bookmark to add")
-@click.option("--private/--no-private", is_flag=True, help="Enable or disable private browsing mode")
+@click.option("--private/--no-private", is_flag=True, default=True, help="Enable or disable private browsing mode")
 @click.option("--marionette/--no-marionette", is_flag=True, default=False, help="Enable Marionette")
 @click.option("--marionette-port", default=2828, type=int, help="Marionette port")
-@click.option("--with-vpn/--without-vpn", default=True, help="Run Firefox via the vpn-passthrough daemon")
+@click.option("--with-vpn/--without-vpn", is_flag=True, default=True, help="Run Firefox via the vpn-passthrough daemon")
+@click.option("--ublock-origin/--no-ublock-origin", is_flag=True, default=False, help="Install uBlock Origin by default")
+@click.option("--adnauseam/--no-adnauseam", is_flag=True, default=False, help="Install AdNauseam by default")
 def main(
     url: str | None,
     headless: bool,
@@ -35,6 +40,8 @@ def main(
     marionette: bool,
     marionette_port: int,
     with_vpn: bool,
+    ublock_origin: bool,
+    adnauseam: bool,
 ) -> None:
     async def coro() -> None:
         loop = asyncio.get_running_loop()
@@ -59,6 +66,12 @@ def main(
                     create_extension(location)
                     for location in extension_locations
                 ]
+                if ublock_origin:
+                    logger.debug("Adding uBlock Origin from {url}", url=UBLOCK_ORIGIN_XPI_URL)
+                    extensions.append(Extension.from_url(UBLOCK_ORIGIN_XPI_URL))
+                if adnauseam:
+                    logger.debug("Adding AdNauseam from {url}", url=ADNAUSEAM_XPI_URL)
+                    extensions.append(Extension.from_url(ADNAUSEAM_XPI_URL))
 
                 create_process: CreateProcess | None = None
                 if with_vpn:

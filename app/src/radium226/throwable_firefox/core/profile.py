@@ -1,6 +1,7 @@
 import asyncio
 import shutil
 import tempfile
+import urllib.request
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,8 @@ from ._shell import run_and_wait
 from .bookmark import Bookmark
 from .extension import Extension
 from .proxy import Proxy
+
+ARKENFOX_USER_JS_URL = "https://raw.githubusercontent.com/arkenfox/user.js/master/user.js"
 
 
 class Profile:
@@ -58,16 +61,31 @@ class Profile:
         bookmarks: list[Bookmark],
         marionette_port: int | None,
     ) -> None:
-        await cls._setup_privacy(profile_folder_path)
-        await cls._setup_ai_and_telemetry(profile_folder_path)
-        await cls._setup_search_engine(profile_folder_path)
+        # await cls._setup_arkenfox_base(profile_folder_path)
+        # await cls._setup_privacy(profile_folder_path)
+        # await cls._setup_ai_and_telemetry(profile_folder_path)
+        # await cls._setup_search_engine(profile_folder_path)
         await cls._setup_marionette(profile_folder_path, marionette_port)
         await cls._setup_proxy(profile_folder_path, proxy)
-        cls._setup_bookmarks_toolbar(profile_folder_path)
+        # cls._setup_bookmarks_toolbar(profile_folder_path)
         await cls._setup_extensions(profile_folder_path, extensions)
         await cls._setup_proxy_cert(profile_folder_path, proxy)
         await cls._prestart_firefox(profile_folder_path, extensions, bookmarks)
         await cls._setup_bookmarks(profile_folder_path, bookmarks)
+
+    @classmethod
+    async def _setup_arkenfox_base(cls, profile_folder_path: Path) -> None:
+        logger.debug("Downloading arkenfox user.js from {url}...", url=ARKENFOX_USER_JS_URL)
+        loop = asyncio.get_event_loop()
+        content = await loop.run_in_executor(None, cls._fetch_arkenfox_user_js)
+        user_js = profile_folder_path / "user.js"
+        await loop.run_in_executor(None, lambda: user_js.write_bytes(content))
+        logger.debug("Wrote arkenfox base user.js ({size} bytes)", size=len(content))
+
+    @staticmethod
+    def _fetch_arkenfox_user_js() -> bytes:
+        with urllib.request.urlopen(ARKENFOX_USER_JS_URL, timeout=30) as response:
+            return response.read()
 
     @classmethod
     async def _setup_privacy(cls, profile_folder_path: Path) -> None:
@@ -132,8 +150,7 @@ class Profile:
         logger.debug("Setting DuckDuckGo as default search engine...")
         await cls._append_user_js(profile_folder_path, [
             'user_pref("browser.search.defaultenginename", "DuckDuckGo");',
-            'user_pref("browser.search.selectedEngine", "DuckDuckGo");',
-            'user_pref("browser.urlbar.placeholderName", "DuckDuckGo");',
+            'user_pref("browser.search.selectedEngine", "DuckDuckGo");'
         ])
 
     @classmethod
@@ -238,7 +255,7 @@ class Profile:
             return
         logger.debug("Pre-starting Firefox to initialize profile...")
         pre_process = await asyncio.create_subprocess_exec(
-            "firefox",
+            "librewolf",
             "--headless",
             "--first-startup",
             "--profile",
