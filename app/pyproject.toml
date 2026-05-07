@@ -12,6 +12,7 @@ dependencies = [
     "loguru",
     "aiosqlite",
     "click",
+    "pyyaml",
     "radium226-vpn-passthrough-client",
 ]
 
@@ -29,6 +30,7 @@ radium226-vpn-passthrough-client = { git = "https://git.sr.ht/~radium226/vpn-pas
 dev = [
     "ty",
     "ruff",
+    "types-pyyaml",
 ]
 
 [tool.ruff]

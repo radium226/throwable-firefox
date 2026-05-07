@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 
 import click
+from click.core import ParameterSource
 from loguru import logger
 from radium226.vpn_passthrough.client import Client, ClientConfig
 
@@ -12,12 +13,12 @@ from radium226.throwable_firefox.core import (
     CreateProcess,
     Extension,
     Firefox,
+    Preset,
     Profile,
     create_process_through_vpn,
+    find_default_preset,
+    resolve_preset,
 )
-
-UBLOCK_ORIGIN_XPI_URL = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
-ADNAUSEAM_XPI_URL = "https://addons.mozilla.org/firefox/downloads/file/4756689/adnauseam-3.28.4.xpi"
 
 
 @click.command()
@@ -25,23 +26,23 @@ ADNAUSEAM_XPI_URL = "https://addons.mozilla.org/firefox/downloads/file/4756689/a
 @click.option("--headless", is_flag=True, help="Run Firefox in headless mode")
 @click.option("--extension", "extension_locations", multiple=True, type=str, help="Path or URL of a .xpi extension")
 @click.option("--bookmark", "bookmarks", multiple=True, type=(str, str), metavar="TITLE URL", help="Bookmark to add")
+@click.option("--preset", "preset_value", default=None, type=str, help="Preset name or path to a YAML preset file")
 @click.option("--private/--no-private", is_flag=True, default=True, help="Enable or disable private browsing mode")
 @click.option("--marionette/--no-marionette", is_flag=True, default=False, help="Enable Marionette")
 @click.option("--marionette-port", default=2828, type=int, help="Marionette port")
 @click.option("--with-vpn/--without-vpn", is_flag=True, default=True, help="Run Firefox via the vpn-passthrough daemon")
-@click.option("--ublock-origin/--no-ublock-origin", is_flag=True, default=False, help="Install uBlock Origin by default")
-@click.option("--adnauseam/--no-adnauseam", is_flag=True, default=False, help="Install AdNauseam by default")
+@click.pass_context
 def main(
+    ctx: click.Context,
     url: str | None,
     headless: bool,
     extension_locations: tuple[str, ...],
     bookmarks: tuple[tuple[str, str], ...],
+    preset_value: str | None,
     private: bool,
     marionette: bool,
     marionette_port: int,
     with_vpn: bool,
-    ublock_origin: bool,
-    adnauseam: bool,
 ) -> None:
     async def coro() -> None:
         loop = asyncio.get_running_loop()
@@ -52,6 +53,25 @@ def main(
 
         try:
             async with AsyncExitStack() as exit_stack:
+                preset: Preset | None = (
+                    resolve_preset(preset_value) if preset_value is not None else find_default_preset()
+                )
+                if preset is not None:
+                    logger.debug("Applying preset {name}", name=preset.name)
+                    if (
+                        ctx.get_parameter_source("private") != ParameterSource.COMMANDLINE
+                        and preset.private is not None
+                    ):
+                        private = preset.private
+                    if (
+                        ctx.get_parameter_source("marionette") != ParameterSource.COMMANDLINE
+                        and preset.marionette is not None
+                    ):
+                        marionette = preset.marionette
+
+                preset_bookmarks = preset.bookmarks if preset else []
+                final_bookmarks = preset_bookmarks + [Bookmark(title=t, url=u) for t, u in bookmarks]
+
                 def create_extension(location: str) -> Extension:
                     if location.startswith(("http://", "https://")):
                         logger.debug("Loading extension from URL: {url}", url=location)
@@ -66,12 +86,6 @@ def main(
                     create_extension(location)
                     for location in extension_locations
                 ]
-                if ublock_origin:
-                    logger.debug("Adding uBlock Origin from {url}", url=UBLOCK_ORIGIN_XPI_URL)
-                    extensions.append(Extension.from_url(UBLOCK_ORIGIN_XPI_URL))
-                if adnauseam:
-                    logger.debug("Adding AdNauseam from {url}", url=ADNAUSEAM_XPI_URL)
-                    extensions.append(Extension.from_url(ADNAUSEAM_XPI_URL))
 
                 create_process: CreateProcess | None = None
                 if with_vpn:
@@ -94,7 +108,7 @@ def main(
                     Profile.create(
                         proxy=None,
                         extensions=extensions,
-                        bookmarks=[Bookmark(title=t, url=u) for t, u in bookmarks],
+                        bookmarks=final_bookmarks,
                         marionette_port=marionette_port if marionette else None,
                     )
                 )

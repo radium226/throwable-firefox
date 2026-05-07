@@ -1,7 +1,10 @@
 import asyncio
+import secrets
 import shutil
 import tempfile
+import time
 import urllib.request
+from base64 import urlsafe_b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,11 +14,36 @@ import aiosqlite
 from loguru import logger
 
 from ._shell import run_and_wait
-from .bookmark import Bookmark
+from .bookmark import BookmarkFolder, BookmarkItem
 from .extension import Extension
 from .proxy import Proxy
 
 ARKENFOX_USER_JS_URL = "https://raw.githubusercontent.com/arkenfox/user.js/master/user.js"
+
+
+def _generate_guid() -> str:
+    return urlsafe_b64encode(secrets.token_bytes(9)).decode("ascii")
+
+
+def _hash_url(url: str) -> int:
+    # Mirrors Firefox's hash() SQL function (toolkit/components/places): the low 32 bits
+    # are HashString(url), the next 16 bits are HashString(scheme) & 0xFFFF.
+    golden = 0x9E3779B9
+    mask = 0xFFFFFFFF
+
+    def hash_bytes(data: bytes) -> int:
+        h = 0
+        for b in data:
+            h = (golden * ((((h << 5) | (h >> 27)) & mask) ^ b)) & mask
+        return h
+
+    encoded = url.encode("utf-8")
+    full_hash = hash_bytes(encoded)
+    colon = encoded.find(b":")
+    if colon > 0:
+        prefix_hash = hash_bytes(encoded[:colon]) & 0xFFFF
+        return (prefix_hash << 32) | full_hash
+    return full_hash
 
 
 class Profile:
@@ -31,7 +59,7 @@ class Profile:
         marionette_port: int | None = None,
         proxy: Proxy | None = None,
         extensions: list[Extension] | None = None,
-        bookmarks: list[Bookmark] | None = None,
+        bookmarks: list[BookmarkItem] | None = None,
     ) -> AsyncIterator[Self]:
         extensions = extensions or []
         bookmarks = bookmarks or []
@@ -58,7 +86,7 @@ class Profile:
         profile_folder_path: Path,
         proxy: Proxy | None,
         extensions: list[Extension],
-        bookmarks: list[Bookmark],
+        bookmarks: list[BookmarkItem],
         marionette_port: int | None,
     ) -> None:
         # await cls._setup_arkenfox_base(profile_folder_path)
@@ -67,7 +95,7 @@ class Profile:
         # await cls._setup_search_engine(profile_folder_path)
         await cls._setup_marionette(profile_folder_path, marionette_port)
         await cls._setup_proxy(profile_folder_path, proxy)
-        # cls._setup_bookmarks_toolbar(profile_folder_path)
+        await cls._setup_bookmarks_toolbar(profile_folder_path)
         await cls._setup_extensions(profile_folder_path, extensions)
         await cls._setup_proxy_cert(profile_folder_path, proxy)
         await cls._prestart_firefox(profile_folder_path, extensions, bookmarks)
@@ -178,11 +206,11 @@ class Profile:
         ])
 
     @classmethod
-    def _setup_bookmarks_toolbar(cls, profile_folder_path: Path) -> None:
-        logger.debug("Setting up bookmarks toolbar...")
-        (profile_folder_path / "xulstore.json").write_text(
-            '{"chrome://browser/content/browser.xhtml":{"PersonalToolbar":{"collapsed":"false"}}}'
-        )
+    async def _setup_bookmarks_toolbar(cls, profile_folder_path: Path) -> None:
+        logger.debug("Setting bookmarks toolbar to always visible...")
+        await cls._append_user_js(profile_folder_path, [
+            'user_pref("browser.toolbars.bookmarks.visibility", "always");',
+        ])
 
     @classmethod
     async def _setup_extensions(cls, profile_folder_path: Path, extensions: list[Extension]) -> None:
@@ -218,38 +246,66 @@ class Profile:
         )
 
     @classmethod
-    async def _setup_bookmarks(cls, profile_folder_path: Path, bookmarks: list[Bookmark]) -> None:
+    async def _setup_bookmarks(cls, profile_folder_path: Path, bookmarks: list[BookmarkItem]) -> None:
         if not bookmarks:
             return
-        logger.debug("Setting up {count} bookmark(s)...", count=len(bookmarks))
+        logger.debug("Setting up {count} top-level bookmark item(s)...", count=len(bookmarks))
         places_path = profile_folder_path / "places.sqlite"
         # parent=3 is the Bookmarks Toolbar folder in Firefox
         toolbar_parent_id = 3
+        now = time.time_ns() // 1000
+
+        async def next_id(db: aiosqlite.Connection, table: str) -> int:
+            row = await db.execute(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table}")
+            fetched = await row.fetchone()
+            assert fetched is not None
+            (n,) = fetched
+            return n
+
+        async def delete_subtree(db: aiosqlite.Connection, parent_id: int) -> None:
+            cursor = await db.execute("SELECT id FROM moz_bookmarks WHERE parent = ?", (parent_id,))
+            children = [row[0] for row in await cursor.fetchall()]
+            for child_id in children:
+                await delete_subtree(db, child_id)
+            await db.execute("DELETE FROM moz_bookmarks WHERE parent = ?", (parent_id,))
+
+        async def insert_items(
+            db: aiosqlite.Connection, items: list[BookmarkItem], parent_id: int
+        ) -> None:
+            for position, item in enumerate(items):
+                if isinstance(item, BookmarkFolder):
+                    folder_id = await next_id(db, "moz_bookmarks")
+                    await db.execute(
+                        "INSERT INTO moz_bookmarks(id, type, parent, position, title, "
+                        "dateAdded, lastModified, guid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (folder_id, 2, parent_id, position, item.title, now, now, _generate_guid()),
+                    )
+                    await insert_items(db, item.children, folder_id)
+                else:
+                    place_id = await next_id(db, "moz_places")
+                    await db.execute(
+                        "INSERT INTO moz_places(id, url, title, url_hash, guid, foreign_count) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (place_id, item.url, item.title, _hash_url(item.url), _generate_guid(), 1),
+                    )
+                    bookmark_id = await next_id(db, "moz_bookmarks")
+                    await db.execute(
+                        "INSERT INTO moz_bookmarks(id, type, fk, parent, position, title, "
+                        "dateAdded, lastModified, guid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            bookmark_id, 1, place_id, parent_id, position, item.title,
+                            now, now, _generate_guid(),
+                        ),
+                    )
+
         async with aiosqlite.connect(str(places_path)) as db:
-            # Clean up existing bookmarks
-            await db.execute("DELETE FROM moz_bookmarks WHERE parent = ?", (toolbar_parent_id,))
-            for bookmark in bookmarks:
-                row = await db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM moz_places")
-                place_row = await row.fetchone()
-                assert place_row is not None
-                (place_id,) = place_row
-                await db.execute(
-                    "INSERT INTO moz_places(id, url, title) VALUES (?, ?, ?)",
-                    (place_id, bookmark.url, bookmark.title),
-                )
-                row = await db.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM moz_bookmarks")
-                bookmark_row = await row.fetchone()
-                assert bookmark_row is not None
-                (bookmark_id,) = bookmark_row
-                await db.execute(
-                    "INSERT INTO moz_bookmarks(id, type, fk, parent, title) VALUES (?, ?, ?, ?, ?)",
-                    (bookmark_id, 1, place_id, toolbar_parent_id, bookmark.title),
-                )
+            await delete_subtree(db, toolbar_parent_id)
+            await insert_items(db, bookmarks, toolbar_parent_id)
             await db.commit()
 
     @classmethod
     async def _prestart_firefox(
-        cls, profile_folder_path: Path, extensions: list[Extension], bookmarks: list[Bookmark]
+        cls, profile_folder_path: Path, extensions: list[Extension], bookmarks: list[BookmarkItem]
     ) -> None:
         if not extensions and not bookmarks:
             return
