@@ -98,6 +98,8 @@ def main(
                     tunnel_created = await vpn_passthrough_client.create_tunnel(
                         "throwable-firefox",
                         ports_to_forward_from_vpeer_to_loopback=ports,
+                        dns_overrides=preset.dns_overrides if preset else {},
+                        extra_routes=preset.extra_routes if preset else [],
                     )
 
                     exit_stack.push_async_callback(vpn_passthrough_client.destroy_tunnel, tunnel_created.name)

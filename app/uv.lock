@@ -763,7 +763,7 @@ dev = [
 [[package]]
 name = "radium226-vpn-passthrough-client"
 version = "0.1.0"
-source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fclient#cb088d7d55024178850695f399d23a435631e77d" }
+source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fclient#e230745a427f86ee3389604e3aeb0779215d2fdf" }
 dependencies = [
     { name = "loguru" },
     { name = "pyyaml" },
@@ -774,7 +774,7 @@ dependencies = [
 [[package]]
 name = "radium226-vpn-passthrough-ipc"
 version = "0.1.0"
-source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fipc#cb088d7d55024178850695f399d23a435631e77d" }
+source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fipc#e230745a427f86ee3389604e3aeb0779215d2fdf" }
 dependencies = [
     { name = "click" },
     { name = "loguru" },
@@ -784,7 +784,7 @@ dependencies = [
 [[package]]
 name = "radium226-vpn-passthrough-messages"
 version = "0.1.0"
-source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fmessages#cb088d7d55024178850695f399d23a435631e77d" }
+source = { git = "https://git.sr.ht/~radium226/vpn-passthrough?subdirectory=app%2Fpackages%2Fmessages#e230745a427f86ee3389604e3aeb0779215d2fdf" }
 dependencies = [
     { name = "pydantic" },
     { name = "radium226-vpn-passthrough-ipc" },
