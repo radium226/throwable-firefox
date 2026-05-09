@@ -92,6 +92,7 @@ def create_process_through_vpn(client: Client, tunnel_name: str) -> CreateProces
                 tunnel_name=tunnel_name,
                 fds=[sys.stdin.fileno(), sys.stdout.fileno(), sys.stderr.fileno()],
                 on_pid_received=on_pid_received,
+                ambient_capabilities=[],
             )
         )
 
