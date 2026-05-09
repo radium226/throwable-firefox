@@ -1,5 +1,6 @@
 import asyncio
 import signal
+import tempfile
 from contextlib import AsyncExitStack
 from pathlib import Path
 
@@ -16,12 +17,48 @@ from radium226.throwable_firefox.core import (
     Preset,
     Profile,
     create_process_through_vpn,
+    encrypt_preset_bytes,
     find_default_preset,
+    get_preset_password,
+    list_presets,
+    load_preset_from_path,
+    preset_path,
     resolve_preset,
 )
 
 
-@click.command()
+class _DefaultRunGroup(click.Group):
+    """Click group that falls through to the 'run' subcommand when no command is given."""
+
+    ignore_unknown_options = True
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        if not args:
+            args = ["run"]
+        return super().parse_args(ctx, args)
+
+    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+        cmd = super().get_command(ctx, cmd_name)
+        if cmd is None:
+            ctx.meta["_default_arg0"] = cmd_name
+            return super().get_command(ctx, "run")
+        return cmd
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        cmd_name, cmd, remaining = super().resolve_command(ctx, args)
+        if "_default_arg0" in ctx.meta:
+            remaining = [ctx.meta["_default_arg0"], *remaining]
+        return cmd_name, cmd, remaining
+
+
+@click.group(cls=_DefaultRunGroup)
+def main() -> None:
+    pass
+
+
+@main.command("run")
 @click.option("--url", default=None, help="URL to open on launch")
 @click.option("--headless", is_flag=True, help="Run Firefox in headless mode")
 @click.option("--extension", "extension_locations", multiple=True, type=str, help="Path or URL of a .xpi extension")
@@ -32,7 +69,7 @@ from radium226.throwable_firefox.core import (
 @click.option("--marionette-port", default=2828, type=int, help="Marionette port")
 @click.option("--with-vpn/--without-vpn", is_flag=True, default=True, help="Run Firefox via the vpn-passthrough daemon")
 @click.pass_context
-def main(
+def run(
     ctx: click.Context,
     url: str | None,
     headless: bool,
@@ -56,6 +93,7 @@ def main(
                 preset: Preset | None = (
                     resolve_preset(preset_value) if preset_value is not None else find_default_preset()
                 )
+
                 if preset is not None:
                     logger.debug("Applying preset {name}", name=preset.name)
                     if (
@@ -145,3 +183,98 @@ def main(
             pass
 
     asyncio.run(coro())
+
+
+_PRESET_TEMPLATE = """\
+# name: {name}
+default: false
+# private: true
+# marionette: false
+# bookmarks:
+#   - title: "Example"
+#     url: "https://example.com"
+# dns_overrides:
+#   internal.example.com:
+#     - "10.0.0.1"
+# extra_routes:
+#   - "10.0.0.0/8"
+"""
+
+
+@main.command("create-preset")
+@click.argument("name")
+@click.option("--encrypted/--no-encrypted", default=False, help="Encrypt the preset with a password")
+def create_preset(name: str, encrypted: bool) -> None:
+    dest = preset_path(name, encrypted)
+    if dest.exists():
+        raise click.ClickException(f"Preset already exists: {dest}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    password: str | None = None
+    if encrypted:
+        password = get_preset_password(confirm=True)
+
+    template = _PRESET_TEMPLATE.format(name=name)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+        tmp.write(template)
+        tmp_path = Path(tmp.name)
+
+    try:
+        click.edit(filename=str(tmp_path))
+        content = tmp_path.read_bytes()
+        if encrypted and password is not None:
+            dest.write_bytes(encrypt_preset_bytes(content, password))
+        else:
+            dest.write_bytes(content)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    click.echo(f"Preset saved: {dest}")
+
+
+@main.command("edit-preset")
+@click.argument("name")
+def edit_preset(name: str) -> None:
+    plain = preset_path(name, encrypted=False)
+    encrypted_path = preset_path(name, encrypted=True)
+
+    if plain.is_file():
+        click.edit(filename=str(plain))
+        return
+
+    if not encrypted_path.is_file():
+        raise click.ClickException(f"Preset {name!r} not found (looked for {plain} and {encrypted_path})")
+
+    password = get_preset_password()
+    preset = load_preset_from_path(encrypted_path, password)  # validates password before opening editor
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as tmp:
+        import yaml
+        tmp.write(yaml.dump(preset.model_dump(exclude_none=False), allow_unicode=True))
+        tmp_path = Path(tmp.name)
+
+    try:
+        click.edit(filename=str(tmp_path))
+        content = tmp_path.read_bytes()
+        encrypted_path.write_bytes(encrypt_preset_bytes(content, password))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    click.echo(f"Preset saved: {encrypted_path}")
+
+
+@main.command("list-presets")
+def list_presets_cmd() -> None:
+    presets = list_presets()
+    if not presets:
+        click.echo("No presets found.")
+        return
+    for name, is_encrypted, is_default in presets:
+        tags: list[str] = []
+        if is_encrypted:
+            tags.append("encrypted")
+        if is_default:
+            tags.append("default")
+        suffix = f"  ({', '.join(tags)})" if tags else ""
+        click.echo(f"{name}{suffix}")

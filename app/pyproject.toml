@@ -13,6 +13,7 @@ dependencies = [
     "aiosqlite",
     "click",
     "pyyaml",
+    "cryptography",
     "radium226-vpn-passthrough-client",
 ]
 

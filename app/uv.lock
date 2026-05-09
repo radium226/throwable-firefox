@@ -728,6 +728,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "click" },
+    { name = "cryptography" },
     { name = "loguru" },
     { name = "mitmproxy" },
     { name = "pydantic" },
@@ -746,6 +747,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite" },
     { name = "click" },
+    { name = "cryptography" },
     { name = "loguru" },
     { name = "mitmproxy" },
     { name = "pydantic", specifier = ">=2" },
