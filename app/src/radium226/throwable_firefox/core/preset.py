@@ -131,10 +131,16 @@ def find_default_preset(password: str | None = None) -> "Preset | None":
         return None
     defaults: list[Preset] = []
     for p in sorted(directory.iterdir()):
-        if p.name.endswith(".yaml") or p.name.endswith(".yaml.enc"):
+        if p.name.endswith(".yaml.enc"):
+            if password is None:
+                continue
             preset = load_preset_from_path(p, password)
-            if preset.default:
-                defaults.append(preset)
+        elif p.name.endswith(".yaml"):
+            preset = load_preset_from_path(p)
+        else:
+            continue
+        if preset.default:
+            defaults.append(preset)
     if len(defaults) > 1:
         names = ", ".join(p.name for p in defaults)
         raise ValueError(f"Multiple default presets found: {names}")
