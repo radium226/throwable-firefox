@@ -57,6 +57,7 @@ class Profile:
     async def create(
         cls,
         marionette_port: int | None = None,
+        bidi: bool = False,
         proxy: Proxy | None = None,
         extensions: list[Extension] | None = None,
         bookmarks: list[BookmarkItem] | None = None,
@@ -75,6 +76,7 @@ class Profile:
                 extensions=extensions,
                 bookmarks=bookmarks,
                 marionette_port=marionette_port,
+                bidi=bidi,
             )
             yield cls(path=profile_folder_path)
         finally:
@@ -88,12 +90,14 @@ class Profile:
         extensions: list[Extension],
         bookmarks: list[BookmarkItem],
         marionette_port: int | None,
+        bidi: bool,
     ) -> None:
         # await cls._setup_arkenfox_base(profile_folder_path)
         # await cls._setup_privacy(profile_folder_path)
         # await cls._setup_ai_and_telemetry(profile_folder_path)
         # await cls._setup_search_engine(profile_folder_path)
         await cls._setup_marionette(profile_folder_path, marionette_port)
+        await cls._setup_bidi(profile_folder_path, bidi)
         await cls._setup_proxy(profile_folder_path, proxy)
         await cls._setup_bookmarks_toolbar(profile_folder_path)
         await cls._setup_extensions(profile_folder_path, extensions)
@@ -188,6 +192,16 @@ class Profile:
         logger.debug("Setting up marionette on port {port}...", port=marionette_port)
         await cls._append_user_js(profile_folder_path, [
             f'user_pref("marionette.port", {marionette_port});',
+        ])
+
+    @classmethod
+    async def _setup_bidi(cls, profile_folder_path: Path, bidi: bool) -> None:
+        if not bidi:
+            return
+        logger.debug("Setting up WebDriver BiDi...")
+        await cls._append_user_js(profile_folder_path, [
+            # 2 = BiDi only (excludes the CDP protocol also served by the remote agent).
+            'user_pref("remote.active-protocols", 2);',
         ])
 
     @classmethod

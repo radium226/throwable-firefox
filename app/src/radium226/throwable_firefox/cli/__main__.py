@@ -68,6 +68,8 @@ def main() -> None:
 @click.option("--private/--no-private", is_flag=True, default=True, help="Enable or disable private browsing mode")
 @click.option("--marionette/--no-marionette", is_flag=True, default=False, help="Enable Marionette")
 @click.option("--marionette-port", default=2828, type=int, help="Marionette port")
+@click.option("--bidi/--no-bidi", is_flag=True, default=False, help="Enable the WebDriver BiDi debugger")
+@click.option("--bidi-port", default=9222, type=int, help="WebDriver BiDi port")
 @click.option("--with-vpn/--without-vpn", is_flag=True, default=True, help="Run Firefox via the vpn-passthrough daemon")
 @click.pass_context
 def run(
@@ -80,10 +82,12 @@ def run(
     private: bool,
     marionette: bool,
     marionette_port: int,
+    bidi: bool,
+    bidi_port: int,
     with_vpn: bool,
 ) -> None:
     async def coro() -> None:
-        nonlocal private, marionette
+        nonlocal private, marionette, bidi
         loop = asyncio.get_running_loop()
         shutdown_event = asyncio.Event()
 
@@ -108,6 +112,11 @@ def run(
                         and preset.marionette is not None
                     ):
                         marionette = preset.marionette
+                    if (
+                        ctx.get_parameter_source("bidi") != ParameterSource.COMMANDLINE
+                        and preset.bidi is not None
+                    ):
+                        bidi = preset.bidi
 
                 preset_bookmarks = preset.bookmarks if preset else []
                 final_bookmarks = preset_bookmarks + [Bookmark(title=t, url=u) for t, u in bookmarks]
@@ -134,7 +143,7 @@ def run(
                     regions = await vpn_passthrough_client.list_regions()
                     region_id = regions[0].region_id
                     logger.debug("Selected VPN region: {region_id}", region_id=region_id)
-                    ports = [marionette_port] if marionette else []
+                    ports = ([marionette_port] if marionette else []) + ([bidi_port] if bidi else [])
                     tunnel_created = await vpn_passthrough_client.create_tunnel(
                         "throwable-firefox",
                         region_id=region_id,
@@ -162,12 +171,25 @@ def run(
                             )
                         )
 
+                    # Same as marionette above: the BiDi remote agent also binds inside the
+                    # tunnel's network namespace, so relay it out to the host's 127.0.0.1.
+                    if bidi and tunnel_created.tunnel.vpeer_ip:
+                        await exit_stack.enter_async_context(
+                            forward_tcp_port(
+                                "127.0.0.1",
+                                bidi_port,
+                                tunnel_created.tunnel.vpeer_ip,
+                                bidi_port,
+                            )
+                        )
+
                 profile = await exit_stack.enter_async_context(
                     Profile.create(
                         proxy=None,
                         extensions=extensions,
                         bookmarks=final_bookmarks,
                         marionette_port=marionette_port if marionette else None,
+                        bidi=bidi,
                     )
                 )
 
@@ -177,6 +199,12 @@ def run(
                         host="127.0.0.1",
                         port=marionette_port,
                     )
+                if bidi:
+                    logger.info(
+                        "WebDriver BiDi listening on ws://{host}:{port}",
+                        host="127.0.0.1",
+                        port=bidi_port,
+                    )
                 browser = await exit_stack.enter_async_context(
                     Firefox.launch(
                         profile,
@@ -184,6 +212,7 @@ def run(
                         private=private,
                         url=url,
                         with_marionette=marionette,
+                        bidi_port=bidi_port if bidi else None,
                         create_process=create_process,
                     )
                 )
@@ -213,6 +242,7 @@ _PRESET_TEMPLATE = """\
 default: false
 # private: true
 # marionette: false
+# bidi: false
 # bookmarks:
 #   - title: "Example"
 #     url: "https://example.com"

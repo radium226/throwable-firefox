@@ -25,13 +25,15 @@ class Firefox:
         private: bool = True,
         url: str | None = None,
         with_marionette: bool = False,
+        bidi_port: int | None = None,
         create_process: CreateProcess | None = None,
     ) -> AsyncIterator[Self]:
         create_process = create_process or create_local_process()
-        
+
         headless_args = ["--headless"] if headless else []
         private_args = ["--private-window"] if private else []
         with_marionette_args = ["--marionette"] if with_marionette else []
+        bidi_args = ["--remote-debugging-port", str(bidi_port)] if bidi_port is not None else []
         url_args = [url] if url else []
         profile_args = ["--profile", str(profile.path)]
         command = [
@@ -41,6 +43,7 @@ class Firefox:
             *headless_args,
             *private_args,
             *with_marionette_args,
+            *bidi_args,
             *url_args,
         ]
         logger.debug("Launching Firefox: {command}", command=command)

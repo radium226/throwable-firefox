@@ -23,6 +23,7 @@ class Preset(BaseModel):
     default: bool = False
     private: bool | None = None
     marionette: bool | None = None
+    bidi: bool | None = None
     bookmarks: list[BookmarkItem] = Field(default_factory=list)
     dns_overrides: dict[str, list[str]] = Field(default_factory=dict)
     extra_routes: list[str] = Field(default_factory=list)
