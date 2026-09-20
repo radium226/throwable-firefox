@@ -152,7 +152,9 @@ def run(
                         extra_routes=preset.extra_routes if preset else [],
                     )
 
-                    exit_stack.push_async_callback(vpn_passthrough_client.destroy_tunnel, tunnel_created.name)
+                    exit_stack.push_async_callback(
+                        vpn_passthrough_client.destroy_tunnel, tunnel_created.name, wait=True
+                    )
 
                     create_process = create_process_through_vpn(vpn_passthrough_client, tunnel_created.name)
 
