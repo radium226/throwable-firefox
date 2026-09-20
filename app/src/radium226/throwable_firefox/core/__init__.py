@@ -2,6 +2,7 @@ from .bookmark import Bookmark, BookmarkFolder, BookmarkItem
 from .extension import Extension
 from .firefox import Firefox
 from .http import HTTPFlow, HTTPRequest, HTTPResponse
+from .port_forward import forward_tcp_port
 from .preset import (
     Preset,
     decrypt_preset_bytes,
@@ -41,6 +42,7 @@ __all__ = [
     "decrypt_preset_bytes",
     "encrypt_preset_bytes",
     "find_default_preset",
+    "forward_tcp_port",
     "get_preset_password",
     "list_presets",
     "having_url_that_starts_with",

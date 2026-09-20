@@ -19,6 +19,7 @@ from radium226.throwable_firefox.core import (
     create_process_through_vpn,
     encrypt_preset_bytes,
     find_default_preset,
+    forward_tcp_port,
     get_preset_password,
     list_presets,
     load_preset_from_path,
@@ -82,6 +83,7 @@ def run(
     with_vpn: bool,
 ) -> None:
     async def coro() -> None:
+        nonlocal private, marionette
         loop = asyncio.get_running_loop()
         shutdown_event = asyncio.Event()
 
@@ -145,6 +147,21 @@ def run(
 
                     create_process = create_process_through_vpn(vpn_passthrough_client, tunnel_created.name)
 
+                    # Firefox's marionette listener runs inside the tunnel's network namespace, bound to its
+                    # own loopback. It's only reachable from the host via the vpeer address (the nftables rule
+                    # set up by ports_to_forward_from_vpeer_to_loopback redirects traffic arriving on the vpeer
+                    # interface to 127.0.0.1 inside the namespace) — the host's own 127.0.0.1 is not forwarded.
+                    # Relay the host's own 127.0.0.1:marionette_port there so it works the same as --without-vpn.
+                    if marionette and tunnel_created.tunnel.vpeer_ip:
+                        await exit_stack.enter_async_context(
+                            forward_tcp_port(
+                                "127.0.0.1",
+                                marionette_port,
+                                tunnel_created.tunnel.vpeer_ip,
+                                marionette_port,
+                            )
+                        )
+
                 profile = await exit_stack.enter_async_context(
                     Profile.create(
                         proxy=None,
@@ -154,7 +171,12 @@ def run(
                     )
                 )
 
-                logger.info("Marionette port: {marionette_port}", marionette_port=marionette_port)
+                if marionette:
+                    logger.info(
+                        "Marionette listening on {host}:{port}",
+                        host="127.0.0.1",
+                        port=marionette_port,
+                    )
                 browser = await exit_stack.enter_async_context(
                     Firefox.launch(
                         profile,
