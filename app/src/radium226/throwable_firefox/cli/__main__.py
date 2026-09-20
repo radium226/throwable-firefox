@@ -135,6 +135,7 @@ def run(
                     ports = [marionette_port] if marionette else []
                     tunnel_created = await vpn_passthrough_client.create_tunnel(
                         "throwable-firefox",
+                        region_id=region_id,
                         ports_to_forward_from_vpeer_to_loopback=ports,
                         dns_overrides=preset.dns_overrides if preset else {},
                         extra_routes=preset.extra_routes if preset else [],
